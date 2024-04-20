@@ -2758,6 +2758,51 @@ export class RemoveScreensAttr extends MoveEffectAttr {
   }
 }
 
+export class StealStatBoostsAttr extends MoveAttr {
+
+  constructor() {
+    super(false);
+  }
+  
+  apply(user: Pokemon, target: Pokemon, move: Move, args: any[]): boolean | Promise<boolean> {
+    if (!super.apply(user, target, move, args) || (this.condition && !this.condition(user, target, move)))
+      return false;
+
+    let stoleStats = false;
+    let stolenStatBoosts = target.summonData.battleStats.map(stat => {
+      if(stat > 0) {
+        stoleStats = true;
+        return stat;
+      }
+      return 0;
+    });
+
+    if(stoleStats) {
+      // directly set to 0 as opposed to "change" them to ignore abilities
+      for (let s = 0; s < target.summonData.battleStats.length; s++)
+        target.summonData.battleStats[s] = Math.min(target.summonData.battleStats[s], 0);
+
+      // TODO: maybe test messaging in showdown or something?
+      target.scene.queueMessage(getPokemonMessage(target, `'s stat boosts\nwere eliminated!`));
+
+      // group for StatChangePhase
+      let boostsByLevel = {0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: []};
+      for(let [stat, boost] of stolenStatBoosts.entries()) {
+        boostsByLevel[boost].push(stat);
+      }
+
+      for(let level = 1; level <= 6; level++) {
+        if(boostsByLevel[level].length > 0) {
+          // stat change must be immediate to be ready for damage calculation
+          user.scene.unshiftPhase(new StatChangePhase(user.scene, user.getBattlerIndex(), true, boostsByLevel[level], level, true, false, true));
+        }
+      }
+    }
+
+    return true;
+  }
+}
+
 export class ForceSwitchOutAttr extends MoveEffectAttr {
   private user: boolean;
   private batonPass: boolean;
@@ -3772,8 +3817,10 @@ export function initMoves() {
     new AttackMove(Moves.ACID, Type.POISON, MoveCategory.SPECIAL, 40, 100, 30, 10, 0, 1)
       .attr(StatChangeAttr, BattleStat.SPDEF, -1)
       .target(MoveTarget.ALL_NEAR_ENEMIES),
-    new AttackMove(Moves.EMBER, Type.FIRE, MoveCategory.SPECIAL, 40, 100, 25, 10, 0, 1)
-      .attr(StatusEffectAttr, StatusEffect.BURN),
+    new AttackMove(Moves.EMBER, Type.FIRE, MoveCategory.SPECIAL, 40, 100, 25, 100, 0, 1)
+      // .attr(StatusEffectAttr, StatusEffect.BURN),
+      .attr(StatChangeAttr, BattleStat.ATK, 3, true)
+      .attr(StatChangeAttr, [BattleStat.SPATK, BattleStat.SPDEF], 1, true),
     new AttackMove(Moves.FLAMETHROWER, Type.FIRE, MoveCategory.SPECIAL, 90, 100, 15, 10, 0, 1)
       .attr(StatusEffectAttr, StatusEffect.BURN),
     new StatusMove(Moves.MIST, Type.ICE, -1, 30, -1, 0, 1)
@@ -5541,7 +5588,7 @@ export function initMoves() {
     new AttackMove(Moves.PRISMATIC_LASER, Type.PSYCHIC, MoveCategory.SPECIAL, 160, 100, 10, -1, 0, 7)
       .attr(RechargeAttr),
     new AttackMove(Moves.SPECTRAL_THIEF, Type.GHOST, MoveCategory.PHYSICAL, 90, 100, 10, -1, 0, 7)
-      .partial(),
+      .attr(StealStatBoostsAttr),
     new AttackMove(Moves.SUNSTEEL_STRIKE, Type.STEEL, MoveCategory.PHYSICAL, 100, 100, 5, -1, 0, 7)
       .ignoresAbilities()
       .partial(),
