@@ -435,6 +435,7 @@ export abstract class MoveAttr {
 
 export enum MoveEffectTrigger {
   PRE_APPLY,
+  PRE_DAMAGE,
   POST_APPLY,
   HIT
 }
@@ -2724,18 +2725,31 @@ export class AddArenaTrapTagAttr extends AddArenaTagAttr {
   }
 }
 
-export class RemoveScreensAttr extends MoveEffectAttr {
+export class PreDamageMoveEffectAttr extends MoveEffectAttr {
+  constructor(selfTarget: boolean) {
+    super(selfTarget, MoveEffectTrigger.PRE_DAMAGE);
+  }
+
+  apply(user: Pokemon, target: Pokemon, move: Move, isTypeImmune: boolean, args: any[]): boolean {
+    return false;
+  }
+}
+
+export class RemoveScreensAttr extends PreDamageMoveEffectAttr {
 
   private targetBothSides: boolean;
 
   constructor(targetBothSides: boolean = false) {
-    super(true, MoveEffectTrigger.PRE_APPLY);
+    super(true);
     this.targetBothSides = targetBothSides;
   }
 
-  apply(user: Pokemon, target: Pokemon, move: Move, args: any[]): boolean {
+  apply(user: Pokemon, target: Pokemon, move: Move, isTypeImmune: boolean, args: any[]): boolean {
 
     if (!super.apply(user, target, move, args))
+      return false;
+
+    if (isTypeImmune)
       return false;
 
     if(this.targetBothSides){
@@ -2758,47 +2772,51 @@ export class RemoveScreensAttr extends MoveEffectAttr {
   }
 }
 
-export class StealStatBoostsAttr extends MoveAttr {
+export class StealStatBoostsAttr extends PreDamageMoveEffectAttr {
 
   constructor() {
     super(false);
   }
   
-  apply(user: Pokemon, target: Pokemon, move: Move, args: any[]): boolean | Promise<boolean> {
+  apply(user: Pokemon, target: Pokemon, move: Move, isTypeImmune, args: any[]): boolean {
     if (!super.apply(user, target, move, args) || (this.condition && !this.condition(user, target, move)))
+      return false;
+
+    if (isTypeImmune)
       return false;
 
     let stoleStats = false;
     let stolenStatBoosts = target.summonData.battleStats.map(stat => {
-      if(stat > 0) {
+      if (stat > 0) {
         stoleStats = true;
         return stat;
       }
       return 0;
     });
 
-    if(stoleStats) {
-      // directly set to 0 as opposed to "change" them to ignore abilities
-      for (let s = 0; s < target.summonData.battleStats.length; s++)
-        target.summonData.battleStats[s] = Math.min(target.summonData.battleStats[s], 0);
+    if (!stoleStats)
+      return false;
 
-      // TODO: maybe test messaging in showdown or something?
-      target.scene.queueMessage(getPokemonMessage(target, `'s stat boosts\nwere eliminated!`));
+    // directly set to 0 as opposed to "change" them to ignore abilities
+    for (let s = 0; s < target.summonData.battleStats.length; s++)
+      target.summonData.battleStats[s] = Math.min(target.summonData.battleStats[s], 0);
 
-      // group for StatChangePhase
-      let boostsByLevel = {0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: []};
-      for(let [stat, boost] of stolenStatBoosts.entries()) {
-        boostsByLevel[boost].push(stat);
-      }
+    // TODO: maybe test messaging in showdown or something?
+    target.scene.queueMessage(getPokemonMessage(target, `'s stat boosts\nwere eliminated!`));
 
-      for(let level = 1; level <= 6; level++) {
-        if(boostsByLevel[level].length > 0) {
-          // stat change must be immediate to be ready for damage calculation
-          user.scene.unshiftPhase(new StatChangePhase(user.scene, user.getBattlerIndex(), true, boostsByLevel[level], level, true, false, true));
-        }
-      }
+    // accounting for StatChangePhase requiring a list of stats and a single amount to change by
+    let statsByLevel = {1: [], 2: [], 3: [], 4: [], 5: [], 6: []};
+    for (let [stat, boost] of stolenStatBoosts.entries()) {
+      statsByLevel[boost]?.push(stat);
     }
-
+    let preventAnimation = false;
+    for (let level = 1; level <= 6; level++) {
+      if(statsByLevel[level].empty === 0)
+        continue
+      // stat change must be immediate to be ready for damage calculation
+      user.scene.unshiftPhase(new StatChangePhase(user.scene, user.getBattlerIndex(), true, statsByLevel[level], level, true, false, true, preventAnimation));
+      preventAnimation = true;
+    }
     return true;
   }
 }

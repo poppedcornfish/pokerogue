@@ -2612,6 +2612,7 @@ export class StatChangePhase extends PokemonPhase {
   private levels: Utils.IntegerHolder;
   private showMessage: boolean;
   private ignoreAbilities: boolean;
+  private preventAnimation: boolean;
   private doChangeSynchronously: boolean;
 
   private relLevels: number[];
@@ -2620,7 +2621,7 @@ export class StatChangePhase extends PokemonPhase {
   /**
    * @param doChangeSynchronously save the stat changes before the phase gets queued, only tested for use with Moves.SPECTRAL_THIEF
    */
-  constructor(scene: BattleScene, battlerIndex: BattlerIndex, selfTarget: boolean, stats: BattleStat[], levels: integer, showMessage: boolean = true, ignoreAbilities: boolean = false, doChangeSynchronously: boolean = false) {
+  constructor(scene: BattleScene, battlerIndex: BattlerIndex, selfTarget: boolean, stats: BattleStat[], levels: integer, showMessage: boolean = true, ignoreAbilities: boolean = false, preventAnimation: boolean = false, doChangeSynchronously: boolean = false) {
     super(scene, battlerIndex);
 
     this.selfTarget = selfTarget;
@@ -2628,6 +2629,7 @@ export class StatChangePhase extends PokemonPhase {
     this.levels = new Utils.IntegerHolder(levels);
     this.showMessage = showMessage;
     this.ignoreAbilities = ignoreAbilities;
+    this.preventAnimation = preventAnimation;
     this.doChangeSynchronously = doChangeSynchronously;
     if (doChangeSynchronously)
       this.applyChanges()
@@ -2665,26 +2667,27 @@ export class StatChangePhase extends PokemonPhase {
 
   start() {
     const pokemon = this.getPokemon();
+    const levels = this.levels
     if(!this.doChangeSynchronously)
       this.applyChanges();
 
     const end = () => {
       if (this.showMessage) {
-        const messages = this.getStatChangeMessages(this.filteredStats, this.levels.value, this.relLevels);
+        const messages = this.getStatChangeMessages(this.filteredStats, levels.value, this.relLevels);
         for (let message of messages)
           this.scene.queueMessage(message);
       }
 
-      applyPostStatChangeAbAttrs(PostStatChangeAbAttr, pokemon, this.filteredStats, this.levels.value, this.selfTarget)
+      applyPostStatChangeAbAttrs(PostStatChangeAbAttr, pokemon, this.filteredStats, levels.value, this.selfTarget)
       this.end();
     };
 
-    if (this.relLevels.filter(l => l).length && this.scene.moveAnimations) {
+    if (this.relLevels.filter(l => l).length && this.scene.moveAnimations && !this.preventAnimation) {
       pokemon.enableMask();
       const pokemonMaskSprite = pokemon.maskSprite;
 
       const tileX = (this.player ? 106 : 236) * pokemon.getSpriteScale() * this.scene.field.scale;
-      const tileY = ((this.player ? 148 : 84) + (this.levels.value >= 1 ? 160 : 0)) * pokemon.getSpriteScale() * this.scene.field.scale;
+      const tileY = ((this.player ? 148 : 84) + (levels.value >= 1 ? 160 : 0)) * pokemon.getSpriteScale() * this.scene.field.scale;
       const tileWidth = 156 * this.scene.field.scale * pokemon.getSpriteScale();
       const tileHeight = 316 * this.scene.field.scale * pokemon.getSpriteScale();
 
@@ -2694,7 +2697,7 @@ export class StatChangePhase extends PokemonPhase {
       statSprite.setScale(6);
       statSprite.setOrigin(0.5, 1);
 
-      this.scene.playSound(`stat_${this.levels.value >= 1 ? 'up' : 'down'}`);
+      this.scene.playSound(`stat_${levels.value >= 1 ? 'up' : 'down'}`);
 
       statSprite.setMask(new Phaser.Display.Masks.BitmapMask(this.scene, pokemonMaskSprite));
 
@@ -2715,7 +2718,7 @@ export class StatChangePhase extends PokemonPhase {
       this.scene.tweens.add({
         targets: statSprite,
         duration: 1500,
-        y: `${this.levels.value >= 1 ? '-' : '+'}=${160 * 6}`
+        y: `${levels.value >= 1 ? '-' : '+'}=${160 * 6}`
       });
       
       this.scene.time.delayedCall(1750, () => {
