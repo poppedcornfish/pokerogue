@@ -309,7 +309,7 @@ export default abstract class Pokemon extends Phaser.GameObjects.Container {
             if (this.shiny) {
               const populateVariantColors = (key: string, back: boolean = false): Promise<void> => {
                 return new Promise(resolve => {
-                  const battleSpritePath = this.getBattleSpriteAtlasPath(back, ignoreOverride);
+                  const battleSpritePath = this.getBattleSpriteAtlasPath(back, ignoreOverride).replace('variant/', '').replace(/_[1-3]$/, '');
                   let variantSet: VariantSet;
                   let config = variantData;
                   battleSpritePath.split('/').map(p => config ? config = config[p] : null);
@@ -326,9 +326,9 @@ export default abstract class Pokemon extends Phaser.GameObjects.Container {
                 });
               };
               if (this.isPlayer())
-                Promise.all([ populateVariantColors(this.getBattleSpriteKey()), populateVariantColors(this.getBattleSpriteKey(true)) ]).then(() => updateFusionPaletteAndResolve());
+                Promise.all([ populateVariantColors(this.getBattleSpriteKey(false)), populateVariantColors(this.getBattleSpriteKey(true), true) ]).then(() => updateFusionPaletteAndResolve());
               else
-                populateVariantColors(this.getBattleSpriteKey()).then(() => updateFusionPaletteAndResolve());
+                populateVariantColors(this.getBattleSpriteKey(false)).then(() => updateFusionPaletteAndResolve());
             } else
               updateFusionPaletteAndResolve();
           });
@@ -986,11 +986,8 @@ export default abstract class Pokemon extends Phaser.GameObjects.Container {
 
     let shinyThreshold = new Utils.IntegerHolder(32);
     if (thresholdOverride === undefined) {
-      if (!this.hasTrainer()) {
-        if (new Date() < new Date('4/22/2024'))
-          shinyThreshold.value *= 3;
+      if (!this.hasTrainer())
         this.scene.applyModifiers(ShinyRateBoosterModifier, true, shinyThreshold);
-      }
     } else
       shinyThreshold.value = thresholdOverride;
 
@@ -1493,6 +1490,11 @@ export default abstract class Pokemon extends Phaser.GameObjects.Container {
     return this.isBoss();
   }
 
+  isMax(): boolean {
+    const maxForms = [SpeciesFormKey.GIGANTAMAX, SpeciesFormKey.GIGANTAMAX_RAPID, SpeciesFormKey.GIGANTAMAX_SINGLE, SpeciesFormKey.ETERNAMAX] as string[];
+    return maxForms.includes(this.getFormKey()) || maxForms.includes(this.getFusionFormKey());
+  }
+
   addTag(tagType: BattlerTagType, turnCount: integer = 0, sourceMove?: Moves, sourceId?: integer): boolean {
     const existingTag = this.getTag(tagType);
     if (existingTag) {
@@ -1830,7 +1832,7 @@ export default abstract class Pokemon extends Phaser.GameObjects.Container {
           return false;
         break;
       case StatusEffect.FREEZE:
-        if (this.isOfType(Type.ICE))
+        if (this.isOfType(Type.ICE) || [WeatherType.SUNNY, WeatherType.HARSH_SUN].includes(this.scene?.arena.weather?.weatherType))
           return false;
         break;
       case StatusEffect.BURN:
@@ -2045,7 +2047,7 @@ export default abstract class Pokemon extends Phaser.GameObjects.Container {
     for (let f = 0; f < 2; f++) {
       const variantColors = variantColorCache[!f ? spriteKey : backSpriteKey];
       let variantColorSet = new Map<integer, integer[]>();
-      if (variantColors) {
+      if (this.shiny && variantColors && variantColors[this.variant]) {
         Object.keys(variantColors[this.variant]).forEach(k => {
           variantColorSet.set(Utils.rgbaToInt(Array.from(Object.values(Utils.rgbHexToRgba(k)))), Array.from(Object.values(Utils.rgbHexToRgba(variantColors[this.variant][k]))));
         });
@@ -2084,7 +2086,7 @@ export default abstract class Pokemon extends Phaser.GameObjects.Container {
     for (let f = 0; f < 2; f++) {
       const variantColors = variantColorCache[!f ? fusionSpriteKey : fusionBackSpriteKey];
       let variantColorSet = new Map<integer, integer[]>();
-      if (variantColors) {
+      if (this.fusionShiny && variantColors && variantColors[this.fusionVariant]) {
         Object.keys(variantColors[this.fusionVariant]).forEach(k => {
           variantColorSet.set(Utils.rgbaToInt(Array.from(Object.values(Utils.rgbHexToRgba(k)))), Array.from(Object.values(Utils.rgbHexToRgba(variantColors[this.fusionVariant][k]))));
         });
